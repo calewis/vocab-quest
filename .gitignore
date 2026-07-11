@@ -1,0 +1,27 @@
+# Python env
+build/venv/
+__pycache__/
+*.pyc
+
+# Copyrighted / large source texts — never publish
+books/
+
+# Large intermediate build artifacts (regenerable)
+build/candidates/
+build/out/
+build/chunks/
+build/curate/
+build/boss_candidates.json
+build/final_words.backup.json
+build/final_words.working.json
+
+.DS_Store
+
+# local tooling / stray outputs
+.claude/
+build/review/
+build/pilot_*.json
+
+# offensive-word lists — keep local, never publish
+build/blocklist.txt
+build/books_sentences.py
