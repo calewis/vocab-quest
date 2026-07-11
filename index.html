@@ -40,6 +40,12 @@
   .hud .stat .v{font-size:1.15rem;font-weight:700}
   .hearts{font-size:1.15rem;letter-spacing:2px;min-width:110px}
   .streak .v{color:var(--gold)}
+  .go-reveal{background:var(--card2);border:1px solid var(--line);border-radius:12px;
+    padding:12px 14px;margin:4px 0 14px;text-align:left;font-size:.9rem;line-height:1.4}
+  .go-reveal .rlabel{font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
+  .go-reveal .rword{font-size:1.2rem;font-weight:700;color:var(--gold)}
+  .go-reveal .rdef{color:var(--text);margin-top:3px}
+  .go-reveal .rsent{color:var(--muted);font-style:italic;margin-top:6px}
   .spacer{flex:1}
   .lvl-pill{font-size:.75rem;background:var(--card2);border:1px solid var(--line);
     padding:6px 10px;border-radius:999px;color:var(--muted)}
@@ -232,6 +238,7 @@
     <h2>Game Over</h2>
     <div class="final-score" id="finalScore">0</div>
     <p id="goSummary">Nice run!</p>
+    <div id="goReveal" class="go-reveal hide"></div>
     <div class="row">
       <button class="btn" id="againBtn">Play again</button>
       <button class="btn ghost" id="menuBtn">Change game</button>
@@ -569,7 +576,7 @@ function guess(el, opt){
     // word modes: lose a heart on each wrong guess, keep trying until solved
     state.hearts--;
     updateHUD();
-    if(state.hearts <= 0){ disableGrid(); setTimeout(gameOver, 450); }
+    if(state.hearts <= 0){ if(mode().key==="def") revealAnswer(); disableGrid(); setTimeout(gameOver, 800); }
   }
 }
 function disableGrid(){ [...document.querySelectorAll(".opt")].forEach(o=>o.style.pointerEvents="none"); }
@@ -641,7 +648,26 @@ function gameOver(){
   $("goSummary").textContent = state.score >= bestScore
      ? `New best score! (${currentLabel()})`
      : `Best: ${bestScore.toLocaleString()} · ${currentLabel()}`;
+  showMissedWord();
   $("gameOver").classList.remove("hide");
+}
+
+// On game over the current question is always the one that was missed — reveal
+// its answer so the player still learns the word they couldn't get.
+function showMissedWord(){
+  const box = $("goReveal"), a = state.answer, m = mode();
+  if(!a){ box.classList.add("hide"); return; }
+  if(m.geo){
+    box.innerHTML = `<div class="rlabel">Answer</div>`
+      + `<div class="rword">${a[m.show]} → ${a[m.pick]}</div>`;
+  } else {
+    let html = `<div class="rlabel">The word was</div>`
+      + `<div class="rword">${a.w}</div>`
+      + `<div class="rdef">${a.d}</div>`;
+    if(a.s) html += `<div class="rsent">“${a.s}”</div>`;
+    box.innerHTML = html;
+  }
+  box.classList.remove("hide");
 }
 
 function startGame(){
