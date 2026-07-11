@@ -76,7 +76,7 @@
     position:relative;background:var(--card);border:1px solid var(--line);
     border-radius:14px;padding:16px 12px;min-height:64px;
     display:flex;align-items:center;justify-content:center;text-align:center;
-    font-size:1.02rem;font-weight:600;cursor:pointer;user-select:none;
+    font-size:1.02rem;font-weight:600;cursor:pointer;user-select:none;touch-action:manipulation;
     transition:transform .08s ease,background .15s,border-color .15s,opacity .2s;
   }
   .opt:hover{background:var(--card2);border-color:var(--accent)}
@@ -92,7 +92,7 @@
   .info{
     position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:8px;
     display:flex;align-items:center;justify-content:center;font-size:.9rem;
-    color:var(--muted);cursor:help;opacity:.75;text-decoration:none;
+    color:var(--muted);cursor:help;opacity:.75;text-decoration:none;touch-action:manipulation;
   }
   .info:hover{opacity:1;color:var(--accent2);background:rgba(124,58,237,.15)}
   /* bigger, clearer tap target on touch devices */
@@ -647,23 +647,28 @@ function showPop(target){
   pop.style.left = left + "px"; pop.style.top = top + "px";
 }
 function hidePop(){ pop.style.display = "none"; }
-// Hover-to-peek only on true hover devices; on touch the synthetic mouseover
-// would fight the tap handler and make the popover flicker/vanish.
-if(window.matchMedia && window.matchMedia("(hover: hover)").matches){
-  document.addEventListener("mouseover", e => { const i=e.target.closest(".info"); if(i) showPop(i); });
-  document.addEventListener("mouseout",  e => { if(e.target.closest(".info")) hidePop(); });
-}
-// Tap toggles the popover (mouse click or touch). Use pointerup so it fires
-// reliably on mobile before any synthetic mouse events.
 function togglePop(e){
   const i = e.target.closest(".info");
   if(i){
-    e.preventDefault(); e.stopPropagation();
+    e.preventDefault();
     if(pop.style.display === "block" && pop.dataset.for === i.dataset.key) hidePop();
     else { showPop(i); pop.dataset.for = i.dataset.key; }
   } else if(!e.target.closest("#pop")) hidePop();
 }
-document.addEventListener("click", togglePop);
+// Only a real mouse (fine pointer that can hover) gets hover-to-peek. EVERY
+// other device — phones, tablets, anything coarse — is treated as touch and
+// uses a tap toggle on `pointerup`, which fires reliably and, crucially, never
+// attaches the mouseover/mouseout handlers whose synthetic events on a tap make
+// the popover flicker open-then-shut. (Some phones wrongly report hover:hover,
+// so we require pointer:fine too.)
+const MOUSE = window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+if(MOUSE){
+  document.addEventListener("mouseover", e => { const i=e.target.closest(".info"); if(i) showPop(i); });
+  document.addEventListener("mouseout",  e => { if(e.target.closest(".info")) hidePop(); });
+  document.addEventListener("click", togglePop);
+} else {
+  document.addEventListener("pointerup", togglePop);
+}
 
 /* ---------------- Game over / start ---------------- */
 function gameOver(){
