@@ -220,6 +220,8 @@
     padding:10px 18px;font-weight:700;display:none;z-index:80;box-shadow:0 8px 24px rgba(0,0,0,.4)}
   .installbar{margin-top:10px}
   .hide{display:none!important}
+  .version{position:fixed;right:8px;bottom:6px;z-index:130;pointer-events:none;
+    font-size:.62rem;letter-spacing:.03em;color:var(--muted);opacity:.5;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -260,6 +262,7 @@
 <div id="pop"><div class="cap" id="popCap">In a sentence</div><div id="popBody"></div></div>
 <div class="toast" id="toast"></div>
 <div id="countdown" class="countdown hide"><span id="cdNum"></span></div>
+<div class="version" id="version">dev build</div>
 
 <!-- Start / level select -->
 <div class="overlay" id="startScreen">
