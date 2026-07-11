@@ -84,6 +84,10 @@
     color:var(--muted);cursor:help;opacity:.75;text-decoration:none;
   }
   .info:hover{opacity:1;color:var(--accent2);background:rgba(124,58,237,.15)}
+  /* bigger, clearer tap target on touch devices */
+  @media (pointer: coarse){
+    .info{width:34px;height:34px;font-size:1.05rem;opacity:1;background:rgba(124,58,237,.18)}
+  }
   /* definition reveal — appears top-left only after the word is missed */
   .def-btn{
     left:4px;right:auto;top:4px;width:auto;height:auto;gap:4px;padding:4px 9px;
@@ -590,18 +594,23 @@ function showPop(target){
   pop.style.left = left + "px"; pop.style.top = top + "px";
 }
 function hidePop(){ pop.style.display = "none"; }
-// desktop hover
-document.addEventListener("mouseover", e => { const i=e.target.closest(".info"); if(i) showPop(i); });
-document.addEventListener("mouseout",  e => { if(e.target.closest(".info")) hidePop(); });
-// touch: tap toggles
-document.addEventListener("click", e => {
+// Hover-to-peek only on true hover devices; on touch the synthetic mouseover
+// would fight the tap handler and make the popover flicker/vanish.
+if(window.matchMedia && window.matchMedia("(hover: hover)").matches){
+  document.addEventListener("mouseover", e => { const i=e.target.closest(".info"); if(i) showPop(i); });
+  document.addEventListener("mouseout",  e => { if(e.target.closest(".info")) hidePop(); });
+}
+// Tap toggles the popover (mouse click or touch). Use pointerup so it fires
+// reliably on mobile before any synthetic mouse events.
+function togglePop(e){
   const i = e.target.closest(".info");
-  if(i){ e.stopPropagation();
-    if(pop.style.display==="block" && pop.dataset.for===i.dataset.key){ hidePop(); }
+  if(i){
+    e.preventDefault(); e.stopPropagation();
+    if(pop.style.display === "block" && pop.dataset.for === i.dataset.key) hidePop();
     else { showPop(i); pop.dataset.for = i.dataset.key; }
-  }
-  else if(!e.target.closest("#pop")) hidePop();
-});
+  } else if(!e.target.closest("#pop")) hidePop();
+}
+document.addEventListener("click", togglePop);
 
 /* ---------------- Game over / start ---------------- */
 function gameOver(){
