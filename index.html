@@ -40,6 +40,11 @@
   .hud .stat .v{font-size:1.15rem;font-weight:700}
   .hearts{font-size:1.15rem;letter-spacing:2px;min-width:110px}
   .streak .v{color:var(--gold)}
+  .evil-toggle{display:flex;align-items:flex-start;gap:10px;text-align:left;cursor:pointer;
+    background:rgba(239,68,68,.08);border:1px solid var(--bad);border-radius:12px;
+    padding:11px 13px;margin:0 0 12px;color:var(--text)}
+  .evil-toggle input{margin-top:3px;width:18px;height:18px;accent-color:var(--bad);flex:none}
+  .evil-toggle small{color:var(--muted);font-size:.78rem}
   .go-reveal{background:var(--card2);border:1px solid var(--line);border-radius:12px;
     padding:12px 14px;margin:4px 0 14px;text-align:left;font-size:.9rem;line-height:1.4}
   .go-reveal .rlabel{font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
@@ -128,9 +133,9 @@
   button.ghost{background:var(--card);border:1px solid var(--line);color:var(--text)}
 
   .overlay{position:fixed;inset:0;background:rgba(5,8,18,.82);backdrop-filter:blur(6px);
-    display:flex;align-items:center;justify-content:center;padding:20px;z-index:100}
+    display:flex;justify-content:center;padding:20px;z-index:100;overflow-y:auto;overscroll-behavior:contain}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:20px;
-    padding:26px 22px;max-width:440px;width:100%;text-align:center;
+    padding:26px 22px;max-width:440px;width:100%;text-align:center;margin:auto;
     box-shadow:0 20px 60px rgba(0,0,0,.5)}
   .panel h2{margin:.1em 0 .3em;font-size:1.5rem}
   .panel p{color:var(--muted);margin:.2em 0 1em}
@@ -227,6 +232,10 @@
     <p id="startBlurb">Pick a game mode and difficulty. 12 tiles, one answer — miss and you lose a ❤️.</p>
     <div class="modes" id="modes"></div>
     <div class="levels" id="levels"></div>
+    <label id="evilToggle" class="evil-toggle hide">
+      <input type="checkbox" id="evilChk">
+      <span><b>😈 Fiendish decoys</b><br><small>Every tile is a near-synonym — only the exact meaning wins, and no sentence hints.</small></span>
+    </label>
     <button class="btn" id="startBtn" style="width:100%">Start</button>
   </div>
 </div>
@@ -271,7 +280,7 @@ function loadWords(){
   if(!PACKED_DATA) return;                        // no data embedded yet
   for(const lvl of LEVELS){
     const rows = PACKED_DATA[lvl.key];
-    if(rows) lvl.words = rows.map(r => ({ w:r[0], p:POS[r[1]], d:r[2], s:r[3], form:r[4], g:r[5], c:r[6] }));
+    if(rows) lvl.words = rows.map(r => ({ w:r[0], p:POS[r[1]], d:r[2], s:r[3], form:r[4], g:r[5], c:r[6], nd:r[7] }));
   }
 }
 
@@ -281,7 +290,10 @@ const START_HEARTS = 5;
 const state = {
   modeIdx: 0, levelIdx: 2, hearts: START_HEARTS, score: 0, streak: 0,
   answer: null, options: [], wrongThisWord: 0, seen: new Set(), scramble: null, locked: false,
+  evil: localStorage.getItem("vq_evil") !== "0",   // Fiendish decoys (boss only); default on
 };
+// Boss-only "evil mode": tiles are deliberate near-synonyms, and the sentence peek is off.
+function isEvil(){ return state.evil && LEVELS[state.levelIdx] && LEVELS[state.levelIdx].key === "boss"; }
 let bestScore = +(localStorage.getItem("vq_best") || 0);
 
 const $ = id => document.getElementById(id);
@@ -391,7 +403,16 @@ function buildRound(){
     // and not in the same ambiguity cluster (holder/base fix)
     const distractorPool = pool.filter(x =>
       x.w !== answer.w && !(answer.g && x.g === answer.g) && !(answer.c && x.c === answer.c));
-    const distractors = shuffle(distractorPool.slice()).slice(0, OPTIONS_PER_ROUND - 1);
+    let distractors;
+    if(isEvil() && answer.nd && answer.nd.length){
+      // Fiendish: fill tiles with hand-picked near-synonyms (close but not the
+      // right meaning), topping up from the normal pool if fewer than 11 traps.
+      const traps = shuffle(answer.nd.slice()).filter(w => w !== answer.w).map(w => ({ w, decoy:true }));
+      const fill = shuffle(distractorPool.slice()).filter(x => !answer.nd.includes(x.w));
+      distractors = traps.concat(fill).slice(0, OPTIONS_PER_ROUND - 1);
+    } else {
+      distractors = shuffle(distractorPool.slice()).slice(0, OPTIONS_PER_ROUND - 1);
+    }
     state.answer = answer;
     state.options = shuffle([answer, ...distractors]);
   }
@@ -416,6 +437,7 @@ function render(){
 
   const grid = $("grid");
   grid.className = "grid"; grid.innerHTML = "";
+  const evil = isEvil();
   state.options.forEach(opt => {
     const label = m.geo ? opt[m.pick] : opt.w;
     const el = document.createElement("div");
@@ -423,10 +445,12 @@ function render(){
     el.dataset.k = optKey(opt);
     el.innerHTML = `<span>${label}</span>`;
     if(m.key === "def"){
-      el.appendChild(makeInfo("sentence", opt.s, opt.w, "﹖", opt.form));  // sentence peek
-      const defBtn = makeInfo("def", opt.d, opt.w, "📖 def");             // revealed after a miss
-      defBtn.classList.add("def-btn", "hide");
-      el.appendChild(defBtn);
+      if(!evil && opt.s) el.appendChild(makeInfo("sentence", opt.s, opt.w, "﹖", opt.form));  // sentence peek (off in evil mode)
+      if(opt.d){
+        const defBtn = makeInfo("def", opt.d, opt.w, "📖 def");           // revealed after a miss
+        defBtn.classList.add("def-btn", "hide");
+        el.appendChild(defBtn);
+      }
     }
     el.addEventListener("click", e => {
       if(e.target.closest(".info")) return;   // peeking never counts as a guess
@@ -710,7 +734,17 @@ function buildLevelPicker(){
     else b.onclick = () => { state.levelIdx = i; buildLevelPicker(); };
     box.appendChild(b);
   });
+  // the Fiendish-decoys toggle only applies to the Final Boss tier, and only
+  // once decoy data is actually loaded for it
+  const boss = LEVELS[state.levelIdx] && LEVELS[state.levelIdx].key === "boss";
+  const hasDecoys = boss && LEVELS[state.levelIdx].words.some(w => w.nd && w.nd.length);
+  $("evilToggle").classList.toggle("hide", !hasDecoys);
+  $("evilChk").checked = state.evil;
 }
+$("evilChk").onchange = e => {
+  state.evil = e.target.checked;
+  localStorage.setItem("vq_evil", state.evil ? "1" : "0");
+};
 
 $("startBtn").onclick = startGame;
 $("againBtn").onclick = startGame;
