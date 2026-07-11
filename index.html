@@ -170,6 +170,12 @@
   .cat-btn .emo{font-size:1.2rem;line-height:1}
   .cat-btn:hover{color:var(--text)}
   .cat-btn.sel{background:var(--accent);color:#fff}
+  /* Math game */
+  .math-grid{grid-template-columns:repeat(2,1fr)!important}
+  @media(min-width:560px){.math-grid{grid-template-columns:repeat(4,1fr)!important}}
+  .math-opt{font-size:1.6rem;font-weight:800;min-height:70px}
+  .math-opt .kbd{position:absolute;top:5px;left:8px;font-size:.62rem;font-weight:600;
+    color:var(--muted);opacity:.7}
   .coming-soon{grid-column:1/-1;text-align:center;color:var(--muted);
     padding:24px 12px;font-size:.9rem;background:var(--card2);
     border:1px dashed var(--line);border-radius:12px}
@@ -221,9 +227,9 @@
 
   <!-- HUD -->
   <div class="hud" id="hud">
-    <div class="stat"><span class="k">Score</span><span class="v" id="score">0</span></div>
-    <div class="stat streak"><span class="k">Streak</span><span class="v" id="streak">🔥 0</span></div>
-    <div class="stat"><span class="k">Best</span><span class="v" id="best">0</span></div>
+    <div class="stat"><span class="k" id="kScore">Score</span><span class="v" id="score">0</span></div>
+    <div class="stat streak"><span class="k" id="kStreak">Streak</span><span class="v" id="streak">🔥 0</span></div>
+    <div class="stat"><span class="k" id="kBest">Best</span><span class="v" id="best">0</span></div>
     <div class="spacer"></div>
     <div class="hearts" id="hearts">❤️❤️❤️❤️❤️</div>
     <span class="lvl-pill" id="lvlPill">—</span>
@@ -318,7 +324,9 @@ const state = {
   answer: null, options: [], wrongThisWord: 0, seen: new Set(), scramble: null, locked: false,
   evil: localStorage.getItem("vq_evil") !== "0",   // Fiendish decoys (boss only); default on
   deck: [], cardIdx: 0,                            // Flashcard study mode
+  math: null, mathIdx: 0, mathStart: 0, mathTimer: null, mathPenalty: 0,   // Math timed test
 };
+const MATH_TARGET = 50, MATH_HEARTS = 3, MATH_OPTS = 8, MATH_PENALTY = 5000;   // +5s per miss
 const isStudy = () => mode().study;
 // Boss-only "evil mode": tiles are deliberate near-synonyms, and the sentence peek is off.
 function isEvil(){ return state.evil && LEVELS[state.levelIdx] && LEVELS[state.levelIdx].key === "boss"; }
@@ -337,6 +345,11 @@ const MODES = [
   { key:"country2cap", name:"Country → Capital", emo:"🗺️", cat:"geo", geo:"countries", show:"country", pick:"capital", caption:"What is the capital of:" },
   { key:"state2cap",   name:"State → Capital",   emo:"🏙️", cat:"geo", geo:"states",    show:"state",   pick:"capital", caption:"What is the capital of:" },
   { key:"cap2state",   name:"Capital → State",   emo:"🗽", cat:"geo", geo:"states",    show:"capital", pick:"state",   caption:"Which state's capital is this?" },
+  { key:"add",         name:"Addition",          emo:"➕", cat:"math", math:"add" },
+  { key:"sub",         name:"Subtraction",       emo:"➖", cat:"math", math:"sub" },
+  { key:"mul",         name:"Multiplication",    emo:"✖️", cat:"math", math:"mul" },
+  { key:"div",         name:"Division",          emo:"➗", cat:"math", math:"div" },
+  { key:"mix",         name:"Mixed",             emo:"🎲", cat:"math", math:"mix" },
 ];
 // Top-level sections shown as tabs; empty ones show a "coming soon" placeholder.
 const CATEGORIES = [
@@ -411,6 +424,7 @@ function currentLabel(){
   return m.geo ? `${m.emo} ${m.name}` : `${m.emo} ${m.name} · ${LEVELS[state.levelIdx].name}`;
 }
 function updateHUD(){
+  $("kScore").textContent = "Score"; $("kStreak").textContent = "Streak"; $("kBest").textContent = "Best";
   $("score").textContent  = state.score.toLocaleString();
   $("streak").textContent = "🔥 " + state.streak;
   $("best").textContent   = bestScore.toLocaleString();
@@ -422,6 +436,7 @@ function updateHUD(){
 function buildRound(){
   state.locked = false;
   const m = mode();
+  if(m.math){ buildMathRound(); return; }
   if(m.geo){
     const pool = GEO[m.geo].pool, idf = GEO[m.geo].id;
     const fresh = pool.filter(c => !state.seen.has(c[idf]));
@@ -455,6 +470,120 @@ function buildRound(){
   state.wrongThisWord = 0;
   if(m.key === "scramble") renderScramble(); else render();
 }
+
+/* ---------------- Math timed test ---------------- */
+const fmtTime = ms => { const s = Math.floor(ms/1000); return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); };
+const mathElapsed = () => (performance.now() - state.mathStart) + state.mathPenalty;   // wall time + miss penalties
+const rnd12 = () => 1 + ((Math.random()*12)|0);
+function genProblem(op){
+  if(op === "mix") op = ["add","sub","mul","div"][(Math.random()*4)|0];
+  let a = rnd12(), b = rnd12();
+  if(op === "add") return { q:a+b, text:`${a} + ${b}` };
+  if(op === "sub"){ if(b > a) [a,b] = [b,a]; return { q:a-b, text:`${a} − ${b}` }; }
+  if(op === "mul") return { q:a*b, text:`${a} × ${b}` };
+  return { q:a, text:`${a*b} ÷ ${b}` };   // division: a*b ÷ b = a (clean integer)
+}
+function mathOptions(q){
+  const opts = new Set([q]);
+  // plausible near-misses, split above and below the answer
+  const cand = [q+1,q-1,q+2,q-2,q+3,q-3,q+4,q-4,q+5,q-5,q+10,q-10,q+11,q-11,q+12,q-12];
+  shuffle(cand);
+  for(const c of cand){ if(c >= 0 && !opts.has(c)) opts.add(c); if(opts.size >= MATH_OPTS) break; }
+  let k = 6;
+  while(opts.size < MATH_OPTS){ opts.add(q + k); if(q-k >= 0) opts.add(q-k); k++; }   // safety pad
+  return shuffle([...opts]).slice(0, MATH_OPTS);
+}
+function mathChrome(){
+  document.querySelectorAll("#hud .stat").forEach(e => e.classList.remove("hide"));
+  $("hearts").classList.remove("hide");
+  $("defcard").classList.remove("hide");
+  $("skipBtn").classList.add("hide");    // no skipping a timed test
+  $("tagline").classList.add("hide");
+}
+function startMath(){
+  state.mathIdx = 0; state.hearts = MATH_HEARTS; state.mathPenalty = 0;
+  state.mathStart = performance.now();
+  clearInterval(state.mathTimer);
+  state.mathTimer = setInterval(updateMathHUD, 250);
+  buildMathRound();
+}
+function buildMathRound(){
+  if(state.mathIdx >= MATH_TARGET) return finishMath(false);   // cleared all 50
+  state.locked = false;
+  const p = genProblem(mode().math);
+  state.math = p;
+  state.options = mathOptions(p.q).map(v => ({ val:v }));
+  renderMath();
+}
+function updateMathHUD(){
+  $("kScore").textContent = "Problem"; $("score").textContent = `${Math.min(state.mathIdx+1, MATH_TARGET)} / ${MATH_TARGET}`;
+  $("kStreak").textContent = "Time";   $("streak").textContent = fmtTime(mathElapsed());
+  const best = +(localStorage.getItem("vq_bt_" + mode().key) || 0);
+  $("kBest").textContent = "Best";     $("best").textContent = best ? fmtTime(best) : "—";
+  $("hearts").textContent = "❤️".repeat(Math.max(0,state.hearts)) + "🖤".repeat(Math.max(0, MATH_HEARTS - state.hearts));
+  $("lvlPill").textContent = mode().emo + " " + mode().name;
+}
+function renderMath(){
+  mathChrome();
+  updateMathHUD();
+  $("promptCaption").textContent = "Solve:";
+  $("pos").style.display = "none";
+  const def = $("def"); def.classList.remove("flagbig"); def.textContent = state.math.text + " = ?";
+  const grid = $("grid");
+  grid.className = "grid math-grid"; grid.innerHTML = "";
+  state.options.forEach((opt, i) => {
+    const el = document.createElement("div");
+    el.className = "opt math-opt";
+    el.dataset.val = opt.val;
+    el.innerHTML = `<span class="kbd">${i+1}</span><span>${opt.val}</span>`;
+    el.addEventListener("click", () => mathGuess(el, opt));
+    grid.appendChild(el);
+  });
+}
+function mathGuess(el, opt){
+  if(state.locked) return;
+  state.locked = true; disableGrid();
+  const correct = opt.val === state.math.q;
+  if(correct){
+    el.classList.add("correct");
+  } else {
+    el.classList.add("wrong");
+    [...document.querySelectorAll(".math-opt")].forEach(o => { if(+o.dataset.val === state.math.q) o.classList.add("correct"); });
+    state.hearts--;
+    state.mathPenalty += MATH_PENALTY;
+    toast(`+${MATH_PENALTY/1000}s  ·  −1 ❤️`);
+  }
+  state.mathIdx++;
+  updateMathHUD();
+  const wait = correct ? 220 : 750;   // linger a moment on a miss so the answer registers
+  if(state.hearts <= 0) setTimeout(() => finishMath(true), 750);
+  else setTimeout(buildMathRound, wait);
+}
+function finishMath(failed){
+  clearInterval(state.mathTimer);
+  const elapsed = mathElapsed();
+  const key = "vq_bt_" + mode().key;
+  let best = +(localStorage.getItem(key) || 0);
+  let isBest = false;
+  if(!failed && (!best || elapsed < best)){ best = Math.round(elapsed); localStorage.setItem(key, best); isBest = true; }
+  $("goEmoji").textContent = failed ? "💔" : "🏁";
+  $("goTitle").textContent = failed ? "Out of hearts" : "Finished!";
+  $("finalScore").textContent = fmtTime(elapsed);
+  $("goSummary").textContent = failed
+    ? `You reached problem ${Math.min(state.mathIdx, MATH_TARGET)} of ${MATH_TARGET} · ${mode().name}`
+    : `All ${MATH_TARGET} · ${mode().name}` + (isBest ? " · new best time! 🎉" : (best ? ` · best ${fmtTime(best)}` : ""));
+  $("goReveal").classList.add("hide");
+  $("gameOver").classList.remove("hide");
+}
+// Number keys 1–8 pick an answer fast on desktop
+document.addEventListener("keydown", e => {
+  if(!mode().math || !$("startScreen").classList.contains("hide") || !$("gameOver").classList.contains("hide")) return;
+  const n = parseInt(e.key, 10);
+  if(n >= 1 && n <= state.options.length){
+    const grid = $("grid"); const el = grid.children[n-1];
+    if(el) mathGuess(el, state.options[n-1]);
+  }
+});
 
 /* ---------------- Rendering ---------------- */
 function render(){
@@ -821,6 +950,7 @@ function startGame(){
   $("startScreen").classList.add("hide");
   $("gameOver").classList.add("hide");
   if(mode().study){ startStudy(); return; }
+  if(mode().math){ startMath(); return; }
   state.hearts = START_HEARTS; state.score = 0; state.streak = 0; state.seen.clear();
   buildRound();
 }
@@ -869,6 +999,8 @@ function syncPickers(){
   if(empty || !mode().word) $("evilToggle").classList.add("hide");
   $("startBlurb").textContent = empty
     ? `New ${CATEGORIES[state.catIdx].name} games are on the way — check back soon!`
+    : mode().math
+    ? `Race the clock through ${MATH_TARGET} problems (numbers 1–12). Tap the answer — a miss costs a ❤️ and +${MATH_PENALTY/1000}s, ${MATH_HEARTS} misses and you're out.`
     : mode().study
     ? "Flip through the whole word list — see each word's definition and an example sentence. No scoring, no pressure."
     : mode().word
@@ -920,7 +1052,7 @@ function skip(){
   else setTimeout(buildRound, 1400);
 }
 
-function openStartScreen(){ buildCatPicker(); buildModePicker(); buildLevelPicker(); syncPickers(); $("startScreen").classList.remove("hide"); }
+function openStartScreen(){ clearInterval(state.mathTimer); buildCatPicker(); buildModePicker(); buildLevelPicker(); syncPickers(); $("startScreen").classList.remove("hide"); }
 $("skipBtn").onclick  = skip;
 $("menuBtn").onclick  = () => { $("gameOver").classList.add("hide"); openStartScreen(); };
 $("quitBtn").onclick  = () => openStartScreen();
