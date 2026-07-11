@@ -628,7 +628,9 @@ document.addEventListener("keydown", e => {
 });
 
 /* ---------------- Guess logic ---------------- */
-const GEO_GUESSES = 3;   // geography modes get 3 tries and cost at most 1 heart per question
+// geography modes cost at most 1 heart per question. Countries/flags allow 3
+// tries; US states & capitals are easier, so they get a single guess.
+const geoGuesses = () => mode().geo === "states" ? 1 : 3;
 function answerLabel(){
   const m = mode();
   if(m.geo) return state.answer[m.pick];
@@ -662,8 +664,8 @@ function guess(el, opt){
   const db = el.querySelector(".def-btn"); if(db) db.classList.remove("hide");
 
   if(mode().geo){
-    // forgiving: up to 3 tries, and only one heart lost per question
-    if(state.wrongThisWord >= GEO_GUESSES){
+    // forgiving: a few tries, and only one heart lost per question
+    if(state.wrongThisWord >= geoGuesses()){
       state.locked = true;
       state.hearts--;
       state.seen.add(optKey(state.answer));
