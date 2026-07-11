@@ -171,6 +171,11 @@
   .cat-btn:hover{color:var(--text)}
   .cat-btn.sel{background:var(--accent);color:#fff}
   /* Math game */
+  .countdown{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;
+    background:rgba(5,8,18,.72);backdrop-filter:blur(3px);pointer-events:none}
+  .countdown span{font-size:6rem;font-weight:800;color:var(--accent2);text-shadow:0 6px 34px rgba(168,85,247,.55)}
+  .countdown span.pop{animation:cdpop .6s ease}
+  @keyframes cdpop{0%{transform:scale(.4);opacity:0}45%{transform:scale(1.12);opacity:1}100%{transform:scale(1);opacity:1}}
   .math-grid{grid-template-columns:repeat(2,1fr)!important}
   @media(min-width:560px){.math-grid{grid-template-columns:repeat(4,1fr)!important}}
   .math-opt{font-size:1.6rem;font-weight:800;min-height:70px}
@@ -254,6 +259,7 @@
 
 <div id="pop"><div class="cap" id="popCap">In a sentence</div><div id="popBody"></div></div>
 <div class="toast" id="toast"></div>
+<div id="countdown" class="countdown hide"><span id="cdNum"></span></div>
 
 <!-- Start / level select -->
 <div class="overlay" id="startScreen">
@@ -324,7 +330,7 @@ const state = {
   answer: null, options: [], wrongThisWord: 0, seen: new Set(), scramble: null, locked: false,
   evil: localStorage.getItem("vq_evil") !== "0",   // Fiendish decoys (boss only); default on
   deck: [], cardIdx: 0,                            // Flashcard study mode
-  math: null, mathIdx: 0, mathStart: 0, mathTimer: null, mathPenalty: 0,   // Math timed test
+  math: null, mathIdx: 0, mathStart: 0, mathTimer: null, mathPenalty: 0, countdownTimer: null,   // Math timed test
 };
 const MATH_TARGET = 50, MATH_HEARTS = 3, MATH_OPTS = 8, MATH_PENALTY = 5000;   // +5s per miss
 const isStudy = () => mode().study;
@@ -503,6 +509,31 @@ function mathChrome(){
 function startMath(){
   state.mathIdx = 0; state.hearts = MATH_HEARTS; state.mathPenalty = 0;
   state.mathStart = performance.now();
+  clearInterval(state.mathTimer);
+  // show the board behind the countdown so it's clearly "about to start"
+  mathChrome(); updateMathHUD();
+  $("promptCaption").textContent = "Get ready…";
+  $("pos").style.display = "none";
+  const def = $("def"); def.classList.remove("flagbig"); def.textContent = mode().emo + " " + mode().name;
+  $("grid").className = "grid math-grid"; $("grid").innerHTML = "";
+  runCountdown(beginMath);
+}
+function runCountdown(done){
+  const el = $("countdown"), num = $("cdNum"), seq = ["3","2","1","Go!"];
+  let i = 0;
+  el.classList.remove("hide");
+  const tick = () => {
+    if(!$("startScreen").classList.contains("hide")){ el.classList.add("hide"); return; }  // player left — abort
+    if(i >= seq.length){ el.classList.add("hide"); done(); return; }
+    num.textContent = seq[i];
+    num.classList.remove("pop"); void num.offsetWidth; num.classList.add("pop");   // restart the pop animation
+    i++;
+    state.countdownTimer = setTimeout(tick, i === seq.length ? 550 : 700);
+  };
+  tick();
+}
+function beginMath(){
+  state.mathStart = performance.now();   // clock starts only after "Go!"
   clearInterval(state.mathTimer);
   state.mathTimer = setInterval(updateMathHUD, 250);
   buildMathRound();
@@ -1052,7 +1083,7 @@ function skip(){
   else setTimeout(buildRound, 1400);
 }
 
-function openStartScreen(){ clearInterval(state.mathTimer); buildCatPicker(); buildModePicker(); buildLevelPicker(); syncPickers(); $("startScreen").classList.remove("hide"); }
+function openStartScreen(){ clearInterval(state.mathTimer); clearTimeout(state.countdownTimer); $("countdown").classList.add("hide"); buildCatPicker(); buildModePicker(); buildLevelPicker(); syncPickers(); $("startScreen").classList.remove("hide"); }
 $("skipBtn").onclick  = skip;
 $("menuBtn").onclick  = () => { $("gameOver").classList.add("hide"); openStartScreen(); };
 $("quitBtn").onclick  = () => openStartScreen();
