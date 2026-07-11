@@ -257,8 +257,8 @@
 <!-- Game over -->
 <div class="overlay hide" id="gameOver">
   <div class="panel">
-    <div style="font-size:2.4rem">💔</div>
-    <h2>Game Over</h2>
+    <div style="font-size:2.4rem" id="goEmoji">💔</div>
+    <h2 id="goTitle">Game Over</h2>
     <div class="final-score" id="finalScore">0</div>
     <p id="goSummary">Nice run!</p>
     <div id="goReveal" class="go-reveal hide"></div>
@@ -405,16 +405,16 @@ function buildRound(){
   const m = mode();
   if(m.geo){
     const pool = GEO[m.geo].pool, idf = GEO[m.geo].id;
-    let fresh = pool.filter(c => !state.seen.has(c[idf]));
-    if(fresh.length === 0){ state.seen.clear(); fresh = pool.slice(); }
+    const fresh = pool.filter(c => !state.seen.has(c[idf]));
+    if(fresh.length === 0) return gameOver(true);   // seen them all — you cleared the set
     const answer = fresh[(Math.random()*fresh.length)|0];
     const distractors = shuffle(pool.filter(c => c[idf] !== answer[idf])).slice(0, OPTIONS_PER_ROUND - 1);
     state.answer = answer;
     state.options = shuffle([answer, ...distractors]);
   } else {
     const pool = LEVELS[state.levelIdx].words;
-    let fresh = pool.filter(x => !state.seen.has(x.w));
-    if(fresh.length === 0){ state.seen.clear(); fresh = pool.slice(); }
+    const fresh = pool.filter(x => !state.seen.has(x.w));
+    if(fresh.length === 0) return gameOver(true);   // seen every word — you cleared the tier
     const answer = fresh[(Math.random()*fresh.length)|0];
     // distractors: same level, not the answer, not a WordNet synonym (same group),
     // and not in the same ambiguity cluster (holder/base fix)
@@ -749,21 +749,30 @@ if(MOUSE){
 }
 
 /* ---------------- Game over / start ---------------- */
-function gameOver(){
-  if(state.score > bestScore){ bestScore = state.score; localStorage.setItem("vq_best", bestScore); }
+function gameOver(won){
+  const newBest = state.score > bestScore;
+  if(newBest){ bestScore = state.score; localStorage.setItem("vq_best", bestScore); }
+  $("goEmoji").textContent = won ? "🏆" : "💔";
+  $("goTitle").textContent = won ? "Cleared!" : "Game Over";
   $("finalScore").textContent = state.score.toLocaleString();
-  $("goSummary").textContent = state.score >= bestScore
-     ? `New best score! (${currentLabel()})`
-     : `Best: ${bestScore.toLocaleString()} · ${currentLabel()}`;
-  showMissedWord();
+  if(won){
+    const total = mode().geo ? GEO[mode().geo].pool.length : LEVELS[state.levelIdx].words.length;
+    $("goSummary").textContent = `You got through all ${total} · ${currentLabel()}`
+      + (newBest ? " · new best!" : "");
+  } else {
+    $("goSummary").textContent = newBest
+      ? `New best score! (${currentLabel()})`
+      : `Best: ${bestScore.toLocaleString()} · ${currentLabel()}`;
+  }
+  showMissedWord(won);
   $("gameOver").classList.remove("hide");
 }
 
 // On game over the current question is always the one that was missed — reveal
 // its answer so the player still learns the word they couldn't get.
-function showMissedWord(){
+function showMissedWord(won){
   const box = $("goReveal"), a = state.answer, m = mode();
-  if(!a){ box.classList.add("hide"); return; }
+  if(won || !a){ box.classList.add("hide"); return; }   // cleared the set — nothing was missed
   if(m.geo){
     box.innerHTML = `<div class="rlabel">Answer</div>`
       + `<div class="rword">${a[m.show]} → ${a[m.pick]}</div>`;
