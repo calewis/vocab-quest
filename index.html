@@ -162,6 +162,17 @@
   .level-btn.locked{opacity:.45;cursor:not-allowed;filter:grayscale(.4)}
   button.btn:disabled{opacity:.6;cursor:default;filter:none}
   /* mode picker */
+  .cats{display:flex;gap:4px;margin:8px 0 12px;background:var(--card2);
+    border:1px solid var(--line);border-radius:12px;padding:4px}
+  .cat-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+    border:none;background:transparent;color:var(--muted);border-radius:9px;
+    padding:8px 4px;cursor:pointer;font-weight:700;font-size:.72rem;transition:background .15s,color .15s}
+  .cat-btn .emo{font-size:1.2rem;line-height:1}
+  .cat-btn:hover{color:var(--text)}
+  .cat-btn.sel{background:var(--accent);color:#fff}
+  .coming-soon{grid-column:1/-1;text-align:center;color:var(--muted);
+    padding:24px 12px;font-size:.9rem;background:var(--card2);
+    border:1px dashed var(--line);border-radius:12px}
   .modes{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:4px 0 12px}
   .mode-btn{display:flex;align-items:center;gap:8px;justify-content:flex-start;
     background:var(--card2);border:1px solid var(--line);border-radius:12px;
@@ -244,6 +255,7 @@
     <div style="font-size:2.4rem">📚⚔️</div>
     <h2>Vocab Quest</h2>
     <p id="startBlurb">Pick a game mode and difficulty. 12 tiles, one answer — miss and you lose a ❤️.</p>
+    <div class="cats" id="cats"></div>
     <div class="modes" id="modes"></div>
     <div class="levels" id="levels"></div>
     <label id="evilToggle" class="evil-toggle hide">
@@ -302,7 +314,7 @@ function loadWords(){
 const OPTIONS_PER_ROUND = 12;
 const START_HEARTS = 5;
 const state = {
-  modeIdx: 0, levelIdx: 2, hearts: START_HEARTS, score: 0, streak: 0,
+  modeIdx: 0, catIdx: 0, levelIdx: 2, hearts: START_HEARTS, score: 0, streak: 0,
   answer: null, options: [], wrongThisWord: 0, seen: new Set(), scramble: null, locked: false,
   evil: localStorage.getItem("vq_evil") !== "0",   // Fiendish decoys (boss only); default on
   deck: [], cardIdx: 0,                            // Flashcard study mode
@@ -317,14 +329,21 @@ const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1
 
 /* ---------------- Game modes ---------------- */
 const MODES = [
-  { key:"def",         name:"Definitions",       emo:"📖", word:true, caption:"Which word means:" },
-  { key:"scramble",    name:"Word Scramble",     emo:"🔤", word:true, caption:"Unscramble the word that means:" },
-  { key:"flash",       name:"Flashcards",        emo:"🃏", word:true, study:true, caption:"" },
-  { key:"flag",        name:"Flags",             emo:"🚩", geo:"countries", show:"flag",    pick:"country", caption:"Which country flies this flag?" },
-  { key:"cap2country", name:"Capital → Country", emo:"🏛️", geo:"countries", show:"capital", pick:"country", caption:"Which country's capital is this?" },
-  { key:"country2cap", name:"Country → Capital", emo:"🗺️", geo:"countries", show:"country", pick:"capital", caption:"What is the capital of:" },
-  { key:"state2cap",   name:"State → Capital",   emo:"🏙️", geo:"states",    show:"state",   pick:"capital", caption:"What is the capital of:" },
-  { key:"cap2state",   name:"Capital → State",   emo:"🗽", geo:"states",    show:"capital", pick:"state",   caption:"Which state's capital is this?" },
+  { key:"def",         name:"Definitions",       emo:"📖", cat:"word", word:true, caption:"Which word means:" },
+  { key:"scramble",    name:"Word Scramble",     emo:"🔤", cat:"word", word:true, caption:"Unscramble the word that means:" },
+  { key:"flash",       name:"Flashcards",        emo:"🃏", cat:"word", word:true, study:true, caption:"" },
+  { key:"flag",        name:"Flags",             emo:"🚩", cat:"geo", geo:"countries", show:"flag",    pick:"country", caption:"Which country flies this flag?" },
+  { key:"cap2country", name:"Capital → Country", emo:"🏛️", cat:"geo", geo:"countries", show:"capital", pick:"country", caption:"Which country's capital is this?" },
+  { key:"country2cap", name:"Country → Capital", emo:"🗺️", cat:"geo", geo:"countries", show:"country", pick:"capital", caption:"What is the capital of:" },
+  { key:"state2cap",   name:"State → Capital",   emo:"🏙️", cat:"geo", geo:"states",    show:"state",   pick:"capital", caption:"What is the capital of:" },
+  { key:"cap2state",   name:"Capital → State",   emo:"🗽", cat:"geo", geo:"states",    show:"capital", pick:"state",   caption:"Which state's capital is this?" },
+];
+// Top-level sections shown as tabs; empty ones show a "coming soon" placeholder.
+const CATEGORIES = [
+  { key:"word",    name:"Words",     emo:"📖" },
+  { key:"geo",     name:"Geography", emo:"🌍" },
+  { key:"math",    name:"Math",      emo:"🔢" },
+  { key:"history", name:"History",   emo:"🏛️" },
 ];
 const mode = () => MODES[state.modeIdx];
 const optKey = o => mode().geo ? o[GEO[mode().geo].id] : o.w;
@@ -806,10 +825,35 @@ function startGame(){
   buildRound();
 }
 
-/* mode + level select UI */
+/* section + mode + level select UI */
+const catHasModes = key => MODES.some(m => m.cat === key);
+function buildCatPicker(){
+  const box = $("cats"); box.innerHTML = "";
+  CATEGORIES.forEach((c, i) => {
+    const b = document.createElement("button");
+    b.className = "cat-btn" + (i === state.catIdx ? " sel" : "");
+    b.innerHTML = `<span class="emo">${c.emo}</span><span class="nm">${c.name}</span>`;
+    b.onclick = () => selectCategory(i);
+    box.appendChild(b);
+  });
+}
+function selectCategory(i){
+  state.catIdx = i;
+  const cat = CATEGORIES[i].key;
+  // jump the selected mode to the first game in this section (if any)
+  const first = MODES.findIndex(m => m.cat === cat);
+  if(first >= 0 && MODES[state.modeIdx].cat !== cat) state.modeIdx = first;
+  buildCatPicker(); buildModePicker(); buildLevelPicker(); syncPickers();
+}
 function buildModePicker(){
   const box = $("modes"); box.innerHTML = "";
+  const cat = CATEGORIES[state.catIdx];
+  if(!catHasModes(cat.key)){
+    box.innerHTML = `<div class="coming-soon">🚧 ${cat.emo} <b>${cat.name}</b> games are in the works — check back soon!</div>`;
+    return;
+  }
   MODES.forEach((m, i) => {
+    if(m.cat !== cat.key) return;
     const b = document.createElement("button");
     b.className = "mode-btn" + (i === state.modeIdx ? " sel" : "");
     b.innerHTML = `<span class="emo">${m.emo}</span><span class="nm">${m.name}</span>`;
@@ -818,8 +862,14 @@ function buildModePicker(){
   });
 }
 function syncPickers(){
-  $("levels").style.display = mode().word ? "" : "none";
-  $("startBlurb").textContent = mode().study
+  const empty = !catHasModes(CATEGORIES[state.catIdx].key);
+  $("startBtn").disabled = empty;
+  $("startBtn").style.opacity = empty ? ".5" : "";
+  $("levels").style.display = (!empty && mode().word) ? "" : "none";
+  if(empty || !mode().word) $("evilToggle").classList.add("hide");
+  $("startBlurb").textContent = empty
+    ? `New ${CATEGORIES[state.catIdx].name} games are on the way — check back soon!`
+    : mode().study
     ? "Flip through the whole word list — see each word's definition and an example sentence. No scoring, no pressure."
     : mode().word
     ? "Pick a game mode and difficulty. 12 tiles, one answer — miss and you lose a ❤️."
@@ -870,7 +920,7 @@ function skip(){
   else setTimeout(buildRound, 1400);
 }
 
-function openStartScreen(){ buildModePicker(); syncPickers(); buildLevelPicker(); $("startScreen").classList.remove("hide"); }
+function openStartScreen(){ buildCatPicker(); buildModePicker(); buildLevelPicker(); syncPickers(); $("startScreen").classList.remove("hide"); }
 $("skipBtn").onclick  = skip;
 $("menuBtn").onclick  = () => { $("gameOver").classList.add("hide"); openStartScreen(); };
 $("quitBtn").onclick  = () => openStartScreen();
@@ -884,7 +934,7 @@ $("quitBtn").onclick  = () => openStartScreen();
   const cur = LEVELS[state.levelIdx];
   if(cur.locked || cur.words.length < 12) state.levelIdx = 0;  // default to a playable tier
   sb.textContent = "Start"; sb.disabled = false;
-  buildModePicker(); syncPickers(); buildLevelPicker();
+  buildCatPicker(); buildModePicker(); buildLevelPicker(); syncPickers();
 })();
 
 /* ---------------- PWA install (manifest injected as data URI) ---------------- */
